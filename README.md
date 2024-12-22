@@ -81,10 +81,12 @@ docker run --rm -e OPENAI_API_KEY="sk-xxxxxxx" -v "C:\\Users\\Naudor\\Videos:/da
 
 ## **Resolució de problemes**
 
-### Vigilar que les rutes no tinguin espai ni caracters especials.
-### Els subtitols del fitxer han d'estar en format SRT.
-### Heu de tenir  permisos d'escriptura en la carpeta dels fitxers MKV ja que el subtitol traudit es guardarà allí.
-- 
+- Vigilar que les rutes no tinguin espai ni caràcters especials.
+
+- Els subtítols del fitxer han d'estar en format SRT.
+
+- Heu de tenir permisos d'escriptura en la carpeta dels fitxers MKV, ja que el subtítol traduït es guardarà allí.
+
 ### “No s'han trobat fitxers .mkv a la carpeta /data”
 - Comprova que la carpeta especificada conté fitxers `.mkv`.
 - Assegura’t que has utilitzat cometes dobles si la ruta conté espais.
