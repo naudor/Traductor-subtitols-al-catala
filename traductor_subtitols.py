@@ -207,7 +207,7 @@ def processar_carpeta_mkv(ruta_carpeta: str):
     - Automàticament detecta la pista de subtítols en castellà (no SDH/commentary),
       si no n'hi ha, anglès (no SDH/commentary).
     - Extreu la pista al .srt.
-    - Tradueix en blocs de 50 i desa la traducció a *_cat.str.
+    - Tradueix en blocs de 50 i desa la traducció a *_cat.srt.
     """
     patrons = os.path.join(ruta_carpeta, "*.mkv")
     mkv_files = glob.glob(patrons)
@@ -232,9 +232,9 @@ def processar_carpeta_mkv(ruta_carpeta: str):
         # 3) Traduir el fitxer .srt
         resultat_traduit = traduir_fitxer_subtitols(srt_path, model="gpt-4o-mini")
 
-        # 4) Desa el resultat final com a *_cat.str
+        # 4) Desa el resultat final com a *_cat.srt
         nom_arxiu_sense_ext, _ = os.path.splitext(srt_path)
-        fitxer_sortida = nom_arxiu_sense_ext + "_cat.str"
+        fitxer_sortida = nom_arxiu_sense_ext + "_cat.srt"
         with open(fitxer_sortida, 'w', encoding='utf-8') as f:
             f.write(resultat_traduit)
 
