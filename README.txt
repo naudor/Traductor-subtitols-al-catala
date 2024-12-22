@@ -1,7 +1,8 @@
-- Heu de tenir un compte GPT Plus
-- Vigilar que les rutes no tinguin espai ni caracters especials
-- Heu de tenir  permisos d'escriptura en la carpeta dels fitxers MKV ja que el subtitol traudit es guardara allí
-- Millor si teniu els fitxers en una carpeta del mateix ordinador on esteu executant el docker per evitar problemes de xarxa entre la del ordinador i la propia del docker
+- Heu de tenir un compte GPT Plus.
+- Vigilar que les rutes no tinguin espai ni caracters especials.
+- Els subtitols del fitxer han d'estar en format SRT.
+- Heu de tenir  permisos d'escriptura en la carpeta dels fitxers MKV ja que el subtitol traudit es guardarà allí.
+- Millor si teniu els fitxers en una carpeta del mateix ordinador on esteu executant el docker per evitar problemes de xarxa entre la del ordinador i la propia del contenidor Docker.
 - Per descarregar la imatge:
             
 - Per executar-lo:
