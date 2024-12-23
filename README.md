@@ -1,7 +1,8 @@
 # Traductor de Subtítols al Català
 
 Aquesta eina permet traduir automàticament els subítols d'arxius `.mkv` al català mitjançant l'API de ChatGPT. Funciona dins d'un contenidor Docker, la qual cosa assegura un entorn controlat i fàcil d'executar en qualsevol màquina.
-Els subtítols del fitxer han d'estar en format SRT
+
+**Els subtítols del fitxer han d'estar en format SRT**
 
 ---
 
