@@ -2,6 +2,8 @@
 
 Aquesta eina permet traduir automàticament els subítols d'arxius `.mkv` al català mitjançant l'API de ChatGPT. Funciona dins d'un contenidor Docker, la qual cosa assegura un entorn controlat i fàcil d'executar en qualsevol màquina.
 
+**Els subtítols del fitxer han d'estar en format SRT**
+
 ---
 
 ## **Requisits previs**
@@ -94,7 +96,7 @@ docker run --rm -e OPENAI_API_KEY="sk-xxxxxxx" -v "C:\\Users\\Naudor\\Videos:/da
 ### “Error: OPENAI_API_KEY no definida”
 - Verifica que has passat la clau API correctament amb `-e OPENAI_API_KEY="LA_TEVA_CLAU_API"`.
 
-### Problemes de mòn de xarxa o muntatge
+### Problemes de xarxa o muntatge
 - Si estàs utilitzant una carpeta de xarxa o unitats mapejades, assegura’t que està correctament compartida amb Docker.
 - Pots provar de copiar els fitxers a una carpeta local.
 
