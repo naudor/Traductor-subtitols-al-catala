@@ -68,6 +68,9 @@ Original: video.mkv
 Traducció: video_cat.str
 ```
 
+Per veure els subtítols mentres veieu el contingut, ho podeu fer fer de dues maneres:
+- Configurant el vostre reproductorbfe vidro perque inclogui el nou subtitol
+- Utilitzant el programa [MKVMerge](https://mkvtoolnix.download/downloads.html) per sfrgir el dubtitol al fitxer .mkv
 ---
 
 ## **Exemples**
