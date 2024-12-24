@@ -192,6 +192,7 @@ def traduir_fitxer_subtitols(nom_fitxer_srt: str, model: str = "gpt-4o-mini") ->
 
     for bloc in tqdm(blocs_subtitols, desc=f"Traduint blocs ({os.path.basename(nom_fitxer_srt)})"):
         text_traduit = traduir_bloc_gpt4(bloc, client, model=model)
+        text_traduit += "\n\n"
         resultat_total.append(text_traduit)
 
     return "".join(resultat_total)
