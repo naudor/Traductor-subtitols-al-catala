@@ -6,7 +6,6 @@ import sys
 import glob
 import subprocess
 import json
-
 from tqdm import tqdm
 from openai import OpenAI
 
@@ -18,8 +17,8 @@ def trobar_pista_subtitols(mkv_path: str) -> int:
     """
     Retorna el número de pista de subtítols més adequat seguint l'ordre de prioritat:
       1. Castellà (spa/es) no hearing impaired, no commentary
-      2. Anglès (eng) no hearing impaired, no commentary
-    Retorna -1 si no troba cap pista de subtítols que compleixi el criteri.
+      2. Anglès (eng/en) no hearing impaired, no commentary
+    Retorna -1 si no troba cap pista que compleixi el criteri.
     """
     try:
         result = subprocess.run(
@@ -53,13 +52,10 @@ def trobar_pista_subtitols(mkv_path: str) -> int:
         if not (lang.startswith(idioma_buscat)):
             return False
 
-        # hearing_impaired pot ser un bool a "properties"
         hearing_impaired = props.get("hearing_impaired", False)
-
         sdh_indicadors = ["sdh", "hearing", "discapacitat"]
         commentary_indicadors = ["commentary", "director", "comentarios", "comment"]
 
-        # Si el flag hearing_impaired és True, descartem
         if hearing_impaired:
             return False
 
@@ -116,13 +112,16 @@ def extreure_subtitols(mkv_path: str, track_id: int) -> str:
         print(f"Error en extreure la pista {track_id} de {mkv_path}: {e}")
         return ""
 
-    return srt_path
+    # Comprovar si s'ha creat correctament
+    if not os.path.isfile(srt_path):
+        return ""
 
+    return srt_path
 
 def llegir_subtitols_per_blocs(nom_fitxer: str, mida_bloc=50):
     """
     Llegeix el fitxer .srt i retorna una llista de blocs,
-    on cada bloc conté fins a 50 subtítols.
+    on cada bloc conté fins a 'mida_bloc' subtítols.
     """
     with open(nom_fitxer, 'r', encoding='utf-8') as f:
         linies = f.readlines()
@@ -132,28 +131,24 @@ def llegir_subtitols_per_blocs(nom_fitxer: str, mida_bloc=50):
     contador_subtitols = 0
 
     for linia in linies:
-        # Comprova si la línia és un nombre sencer (número de subtítol)
-        es_numeracio = False
+        # Mirem si la línia és exactament un nombre
         try:
-            _ = int(linia.strip())
-            es_numeracio = True
-        except ValueError:
-            pass
-
-        if es_numeracio:
-            contador_subtitols += 1
-            if contador_subtitols > mida_bloc:
+            numero = int(linia.strip())
+            # Si hem arribat a 'mida_bloc' subtítols, tanquem bloc
+            if contador_subtitols == mida_bloc:
                 blocs.append("".join(bloc_actual))
                 bloc_actual = []
-                contador_subtitols = 1
+                contador_subtitols = 0
 
-        bloc_actual.append(linia)
+            contador_subtitols += 1
+            bloc_actual.append(linia)
+        except ValueError:
+            bloc_actual.append(linia)
 
     if bloc_actual:
         blocs.append("".join(bloc_actual))
 
     return blocs
-
 
 def traduir_bloc_gpt4(text_bloc: str, client: OpenAI, model: str = "gpt-4o-mini") -> str:
     """
@@ -180,7 +175,6 @@ def traduir_bloc_gpt4(text_bloc: str, client: OpenAI, model: str = "gpt-4o-mini"
         print("S'ha produït un error en connectar amb l'API d'OpenAI:", e)
         return ""
 
-
 def traduir_fitxer_subtitols(nom_fitxer_srt: str, model: str = "gpt-4o-mini") -> str:
     """
     Llegeix un fitxer .srt, el divideix en blocs de 50 subtítols,
@@ -192,23 +186,59 @@ def traduir_fitxer_subtitols(nom_fitxer_srt: str, model: str = "gpt-4o-mini") ->
 
     for bloc in tqdm(blocs_subtitols, desc=f"Traduint blocs ({os.path.basename(nom_fitxer_srt)})"):
         text_traduit = traduir_bloc_gpt4(bloc, client, model=model)
-        text_traduit += "\n\n"
+
+        # Afegim un salt de línia final per evitar que l'últim subtítol
+        # del bloc quedi enganxat amb el primer del bloc següent.
+        if text_traduit and not text_traduit.endswith("\n"):
+            text_traduit += "\n"
+
         resultat_total.append(text_traduit)
 
     return "".join(resultat_total)
 
+###############################################################################
+#                Funció extra: adjuntar subtítols traduïts al MKV            #
+###############################################################################
+
+def adjuntar_subtitols_mkv(mkv_path: str, srt_path: str, idioma: str = "cat") -> str:
+    """
+    Fa servir mkvmerge per afegir la pista de subtítols .srt al .mkv original.
+    Retorna el path del nou fitxer .mkv generat, 
+    que ara s'anomena igual que l'original però amb '_CAT' al final.
+    """
+    base_name = os.path.splitext(mkv_path)[0]
+    nou_mkv = base_name + "_CAT.mkv"
+
+    # --language 0:cat indica a mkvmerge que la pista té codi d'idioma 'cat'
+    command = [
+        "mkvmerge",
+        "-o", nou_mkv,
+        mkv_path,
+        "--language", "0:cat",
+        srt_path
+    ]
+    try:
+        subprocess.run(command, check=True, capture_output=True)
+        print(f"S'ha creat el nou fitxer MKV amb subtítols catalans: {nou_mkv}")
+    except subprocess.CalledProcessError as e:
+        print(f"Error en afegir subtítols a {mkv_path}: {e}")
+        return ""
+
+    return nou_mkv
 
 ###############################################################################
 #                         Lògica principal: processar MKVs                    #
 ###############################################################################
 
-def processar_carpeta_mkv(ruta_carpeta: str):
+def processar_carpeta_mkv(ruta_carpeta: str, embed_subs: bool = False):
     """
     - Agafa tots els fitxers .mkv de la carpeta.
     - Automàticament detecta la pista de subtítols en castellà (no SDH/commentary),
       si no n'hi ha, anglès (no SDH/commentary).
-    - Extreu la pista al .srt.
+    - Extreu la pista en .srt.
     - Tradueix en blocs de 50 i desa la traducció a *_cat.srt.
+    - Si embed_subs=True, crida mkvmerge per incrustar els subtítols traduïts
+      en un nou fitxer MKV (amb '_CAT' al final del nom).
     """
     patrons = os.path.join(ruta_carpeta, "*.mkv")
     mkv_files = glob.glob(patrons)
@@ -241,18 +271,28 @@ def processar_carpeta_mkv(ruta_carpeta: str):
 
         print(f"  -> Fitxer traduït i guardat a: {fitxer_sortida}")
 
+        # 5) Si embed_subs=True, fem mkvmerge per afegir subtítols
+        if embed_subs:
+            adjuntar_subtitols_mkv(mkv_path, fitxer_sortida)
 
 def main():
     # 1) Comprovem que hi hagi clau d'API al sistema
     api_key = os.getenv("OPENAI_API_KEY")
     if not api_key:
         print("Error: No s'ha trobat la clau d'API a la variable d'entorn OPENAI_API_KEY.")
-        print("       Has d'executar el contenidor amb '-e OPENAI_API_KEY=<la_teva_clau>' o similar.")
         sys.exit(1)
 
-    # 2) Comprovem arguments
+    # 2) Llegim si hi ha variable d'entorn EMBED_SUBS
+    # Qualsevol valor no buit (true, yes, 1...) l'interpretarem com a True
+    embed_subs = False
+    env_embed = os.getenv("EMBED_SUBS", "").strip().lower()
+    if env_embed:
+        embed_subs = True
+
+    # 3) Comprovem arguments
     if len(sys.argv) < 2:
         print("Ús: python traductor_subtitols.py <carpeta_on_hi_ha_els_MKV>")
+        print("   (Opcional) estableix EMBED_SUBS=true si vols afegir els subtítols .srt al .mkv.")
         sys.exit(1)
 
     carpeta = sys.argv[1]
@@ -260,8 +300,7 @@ def main():
         print(f"Error: {carpeta} no és una carpeta vàlida.")
         sys.exit(1)
 
-    # 3) Lliurem el flux
-    processar_carpeta_mkv(carpeta)
+    processar_carpeta_mkv(carpeta, embed_subs=embed_subs)
 
 
 if __name__ == "__main__":
