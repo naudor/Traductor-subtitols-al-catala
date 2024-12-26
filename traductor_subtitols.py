@@ -189,8 +189,8 @@ def traduir_fitxer_subtitols(nom_fitxer_srt: str, model: str = "gpt-4o-mini") ->
 
         # Afegim un salt de línia final per evitar que l'últim subtítol
         # del bloc quedi enganxat amb el primer del bloc següent.
-        if text_traduit and not text_traduit.endswith("\n"):
-            text_traduit += "\n"
+
+        text_traduit += "\n\n"
 
         resultat_total.append(text_traduit)
 
