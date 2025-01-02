@@ -10,6 +10,32 @@ from tqdm import tqdm
 from openai import OpenAI
 
 ###############################################################################
+#             Funció de traducció local amb Apertium (spa-cat)               #
+###############################################################################
+
+def tradueix_castella_a_catala(frase):
+    """
+    Tradueix una frase del castellà al català utilitzant Apertium instal·lat
+    localment dins del contenidor.
+    """
+    command = f"echo \"{frase}\" | apertium spa-cat"
+
+    try:
+        # Executem la comanda amb subprocess
+        result = subprocess.run(
+            command,
+            shell=True,            # Permet a echo | apertium spa-cat funcionar directament
+            capture_output=True,
+            text=True
+        )
+        # El resultat de la traducció és a result.stdout
+        text_traduccio = result.stdout.strip()
+        return text_traduccio if text_traduccio else None
+    except Exception as e:
+        print(f"S'ha produït un error en traduir la frase: {e}")
+        return None
+
+###############################################################################
 #                  Detecció automàtica de la pista de subtítols              #
 ###############################################################################
 
@@ -118,7 +144,7 @@ def extreure_subtitols(mkv_path: str, track_id: int) -> str:
 
     return srt_path
 
-def llegir_subtitols_per_blocs(nom_fitxer: str, mida_bloc=50):
+def llegir_subtitols_per_blocs(nom_fitxer: str, mida_bloc=10):
     """
     Llegeix el fitxer .srt i retorna una llista de blocs,
     on cada bloc conté fins a 'mida_bloc' subtítols.
@@ -150,24 +176,56 @@ def llegir_subtitols_per_blocs(nom_fitxer: str, mida_bloc=50):
 
     return blocs
 
+def corretgir_bloc_gpt4(traduccioApertium: str, traduccioGPT: str, client: OpenAI, model: str = "gpt-4o-mini") -> str:
+    """
+    Envia un bloc de subtítols al model GPT-4o-mini per obtenir la traducció al català.
+    Retorna el text traduït.
+    """
+    prompt = (
+        "Et pasare dos textos, que son la traducció d'un fragment dels subtitols d'un capitol d'una serie de TV al català"
+        "1. Compara cada una de les frases de les dues traduccions.\n"
+        "2. Per cada frase escull la més correcte en català i si son igual de correctes, la que s'adecui millor al context de les frases. En el cas de que les dues siguin igual de correctes i adecuades, escull la del primer text\n"
+        "3. Elimina els '*' davant de les paraules.\n"
+        "4. Modifica la traducció per tal que sigui més correcte en català tenint en compte el context i substituin, si cal, paraules o frases per uns sinonims més cómuns\n"
+        "5. Vigila que les marques de temps que hi hagi, tinguin un format com aquest 00:00:11,595 --> 00:00:14,515 . Corretgeix-les sino compleixen el fortmat.\n"
+        "Recorda manetenir l'estructura de les traduccions en la teva resposta, unicament has de canviar les frases\n"
+        "Tindràs propina si contestes únicament amb el bloc text resultant d'escollir las frase més adequades per cada periode de temps, ni una paraula més."
+        f"Traducció 1 :{traduccioApertium}\n Traducció 2: {traduccioGPT}"
+    )
+    try:
+        resposta = client.chat.completions.create(
+            model=model,
+            messages=[
+                {"role": "system", "content": "Ets un traductor al català expert de subtítols."},
+                {"role": "user", "content": prompt}
+            ],
+            temperature=0.3
+        )
+        text_traduit = resposta.choices[0].message.content
+        return text_traduit
+    except Exception as e:
+        print("S'ha produït un error en connectar amb l'API d'OpenAI:", e)
+        return ""
+    
 def traduir_bloc_gpt4(text_bloc: str, client: OpenAI, model: str = "gpt-4o-mini") -> str:
     """
     Envia un bloc de subtítols al model GPT-4o-mini per obtenir la traducció al català.
     Retorna el text traduït.
     """
     prompt = (
-        "Traduiex el següent text a català. "
-        "No modifiquis la numeració ni els temps dels subtítols, només el text.\n\n"
-        f"{text_bloc}"
+        f"Tradueix el següent text a català:\n{text_bloc}\n\n"
+        "No modifiquis la numeració ni els temps dels subtítols, només el text.\n"
+        "No tradueixis noms propis de persones.\n"
+        "Contesta únicament amb el text traduït, ni una paraula més."
     )
     try:
         resposta = client.chat.completions.create(
             model=model,
             messages=[
-                {"role": "system", "content": "Ets un traductor expert de subtítols."},
+                {"role": "system", "content": "Ets un traductor al català expert en subtítols."},
                 {"role": "user", "content": prompt}
             ],
-            temperature=0.2
+            temperature=0.3
         )
         text_traduit = resposta.choices[0].message.content
         return text_traduit
@@ -177,22 +235,22 @@ def traduir_bloc_gpt4(text_bloc: str, client: OpenAI, model: str = "gpt-4o-mini"
 
 def traduir_fitxer_subtitols(nom_fitxer_srt: str, model: str = "gpt-4o-mini") -> str:
     """
-    Llegeix un fitxer .srt, el divideix en blocs de 50 subtítols,
+    Llegeix un fitxer .srt, el divideix en blocs de 10 subtítols,
     tradueix cada bloc i retorna la concatenació final.
     """
-    blocs_subtitols = llegir_subtitols_per_blocs(nom_fitxer_srt, mida_bloc=50)
+    blocs_subtitols = llegir_subtitols_per_blocs(nom_fitxer_srt, mida_bloc=10)
     client = OpenAI()
     resultat_total = []
 
-    for bloc in tqdm(blocs_subtitols, desc=f"Traduint blocs ({os.path.basename(nom_fitxer_srt)})"):
-        text_traduit = traduir_bloc_gpt4(bloc, client, model=model)
+    for bloc_original in tqdm(blocs_subtitols, desc=f"Traduint blocs ({os.path.basename(nom_fitxer_srt)})"):
+        text_traduitApertium = tradueix_castella_a_catala(bloc_original)
+        text_traduitGPT = traduir_bloc_gpt4(bloc_original, client, model=model)
+        text_corretgit = corretgir_bloc_gpt4(text_traduitApertium, text_traduitGPT, client, model=model)
 
         # Afegim un salt de línia final per evitar que l'últim subtítol
         # del bloc quedi enganxat amb el primer del bloc següent.
-
-        text_traduit += "\n\n"
-
-        resultat_total.append(text_traduit)
+        text_corretgit += "\n\n"
+        resultat_total.append(text_corretgit)
 
     return "".join(resultat_total)
 
@@ -214,7 +272,7 @@ def adjuntar_subtitols_mkv(mkv_path: str, srt_path: str, idioma: str = "cat") ->
         "mkvmerge",
         "-o", nou_mkv,
         mkv_path,
-        "--language", "0:cat",
+        "--language", f"0:{idioma}",
         srt_path
     ]
     try:
@@ -236,7 +294,7 @@ def processar_carpeta_mkv(ruta_carpeta: str, embed_subs: bool = False):
     - Automàticament detecta la pista de subtítols en castellà (no SDH/commentary),
       si no n'hi ha, anglès (no SDH/commentary).
     - Extreu la pista en .srt.
-    - Tradueix en blocs de 50 i desa la traducció a *_cat.srt.
+    - Tradueix en blocs de 10 i desa la traducció a *_cat.srt.
     - Si embed_subs=True, crida mkvmerge per incrustar els subtítols traduïts
       en un nou fitxer MKV (amb '_CAT' al final del nom).
     """
@@ -289,7 +347,7 @@ def main():
     if env_embed:
         embed_subs = True
 
-    # 3) Comprovem arguments
+    #3) Comprovem arguments
     if len(sys.argv) < 2:
         print("Ús: python traductor_subtitols.py <carpeta_on_hi_ha_els_MKV>")
         print("   (Opcional) estableix EMBED_SUBS=true si vols afegir els subtítols .srt al .mkv.")
