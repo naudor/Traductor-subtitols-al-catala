@@ -24,6 +24,7 @@ RUN curl -sS https://apertium.projectjj.com/apt/install-release.sh | bash
 RUN apt-get update && apt-get install -y \
     apertium-all-dev \
     apertium-spa-cat \
+	apertium-eng-cat \
  && rm -rf /var/lib/apt/lists/*
 
 # Creem el directori per l'app

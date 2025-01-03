@@ -10,41 +10,15 @@ from tqdm import tqdm
 from openai import OpenAI
 
 ###############################################################################
-#             Funció de traducció local amb Apertium (spa-cat)               #
+#       Funció de detecció del track_id i l'idioma (castellà o anglès)        #
 ###############################################################################
 
-def tradueix_castella_a_catala(frase):
+def trobar_pista_subtitols(mkv_path: str):
     """
-    Tradueix una frase del castellà al català utilitzant Apertium instal·lat
-    localment dins del contenidor.
-    """
-    command = f"echo \"{frase}\" | apertium spa-cat"
-
-    try:
-        # Executem la comanda amb subprocess
-        result = subprocess.run(
-            command,
-            shell=True,            # Permet a echo | apertium spa-cat funcionar directament
-            capture_output=True,
-            text=True
-        )
-        # El resultat de la traducció és a result.stdout
-        text_traduccio = result.stdout.strip()
-        return text_traduccio if text_traduccio else None
-    except Exception as e:
-        print(f"S'ha produït un error en traduir la frase: {e}")
-        return None
-
-###############################################################################
-#                  Detecció automàtica de la pista de subtítols              #
-###############################################################################
-
-def trobar_pista_subtitols(mkv_path: str) -> int:
-    """
-    Retorna el número de pista de subtítols més adequat seguint l'ordre de prioritat:
+    Retorna un tuple (track_id, track_lang) segons l'ordre de prioritat:
       1. Castellà (spa/es) no hearing impaired, no commentary
       2. Anglès (eng/en) no hearing impaired, no commentary
-    Retorna -1 si no troba cap pista que compleixi el criteri.
+    Retorna (-1, None) si no troba cap pista que compleixi el criteri.
     """
     try:
         result = subprocess.run(
@@ -55,17 +29,17 @@ def trobar_pista_subtitols(mkv_path: str) -> int:
         )
     except subprocess.CalledProcessError as e:
         print(f"Error executant mkvmerge -J sobre {mkv_path}: {e}")
-        return -1
+        return -1, None
 
     try:
         info = json.loads(result.stdout)
     except json.JSONDecodeError as e:
         print(f"No s'ha pogut parsejar el JSON de {mkv_path}: {e}")
-        return -1
+        return -1, None
 
     if "tracks" not in info:
         print(f"No hi ha informació de 'tracks' al JSON de {mkv_path}")
-        return -1
+        return -1, None
 
     pistes_subtitols = [t for t in info["tracks"] if t.get("type") == "subtitles"]
 
@@ -94,11 +68,12 @@ def trobar_pista_subtitols(mkv_path: str) -> int:
 
     # 1) Castellà
     pistes_castella = [
-        p for p in pistes_subtitols 
+        p for p in pistes_subtitols
         if es_valida(p, "es") or es_valida(p, "spa")
     ]
     if pistes_castella:
-        return pistes_castella[0]["id"]
+        # Retornem el primer track ID que hem trobat i l'idioma "es"
+        return pistes_castella[0]["id"], "es"
 
     # 2) Anglès
     pistes_angles = [
@@ -106,12 +81,48 @@ def trobar_pista_subtitols(mkv_path: str) -> int:
         if es_valida(p, "en") or es_valida(p, "eng")
     ]
     if pistes_angles:
-        return pistes_angles[0]["id"]
+        # Retornem el primer track ID que hem trobat i l'idioma "en"
+        return pistes_angles[0]["id"], "en"
 
-    return -1
+    return -1, None
 
 ###############################################################################
-#                         Funcions d'extracció i traducció                   #
+#       Funció de traducció local amb Apertium (spa-cat o eng-cat)            #
+###############################################################################
+
+def tradueix_a_catala(frase, track_lang: str):
+    """
+    Tradueix una frase al català utilitzant Apertium dins el contenidor.
+    Triem la parella de traducció en funció de l'idioma detectat:
+      - spa-cat si la pista és en castellà
+      - eng-cat si la pista és en anglès
+    """
+    # Determinem la pipeline d'Apertium
+    if track_lang == "es":
+        pipeline = "spa-cat"
+    elif track_lang == "en":
+        pipeline = "eng-cat"
+    else:
+        # Si no coincideix, assumim castellà per defecte
+        pipeline = "spa-cat"
+
+    command = f'echo "{frase}" | apertium {pipeline}'
+
+    try:
+        result = subprocess.run(
+            command,
+            shell=True,            # Permet a echo | apertium
+            capture_output=True,
+            text=True
+        )
+        text_traduccio = result.stdout.strip()
+        return text_traduccio if text_traduccio else None
+    except Exception as e:
+        print(f"S'ha produït un error en traduir la frase: {e}")
+        return None
+
+###############################################################################
+#                         Funcions d'extracció i de divisió                   #
 ###############################################################################
 
 def extreure_subtitols(mkv_path: str, track_id: int) -> str:
@@ -176,22 +187,27 @@ def llegir_subtitols_per_blocs(nom_fitxer: str, mida_bloc=10):
 
     return blocs
 
+###############################################################################
+#                          Funcions de traducció GPT4                         #
+###############################################################################
+
 def corretgir_bloc_gpt4(traduccioApertium: str, traduccioGPT: str, client: OpenAI, model: str = "gpt-4o-mini") -> str:
     """
     Envia un bloc de subtítols al model GPT-4o-mini per obtenir la traducció al català.
     Retorna el text traduït.
     """
     prompt = (
-        "Et pasare dos textos, que son la traducció d'un fragment dels subtitols d'un capitol d'una serie de TV al català"
+        "Et pasaré dos textos, que són la traducció d'un fragment dels subtítols d'un capítol d'una sèrie de TV al català.\n"
         "1. Compara cada una de les frases de les dues traduccions.\n"
-        "2. Per cada frase escull la més correcte en català i si son igual de correctes, la que s'adecui millor al context de les frases. En el cas de que les dues siguin igual de correctes i adecuades, escull la del primer text\n"
+        "2. Per cada frase, escull la més correcta en català i, si són igual de correctes, la que s'adeqüi millor al context. En cas que siguin exactament iguals, escull la del primer text.\n"
         "3. Elimina els '*' davant de les paraules.\n"
-        "4. Modifica la traducció per tal que sigui més correcte en català tenint en compte el context i substituin, si cal, paraules o frases per uns sinonims més cómuns\n"
-        "5. Vigila que les marques de temps que hi hagi, tinguin un format com aquest 00:00:11,595 --> 00:00:14,515 . Corretgeix-les sino compleixen el fortmat.\n"
-        "Recorda manetenir l'estructura de les traduccions en la teva resposta, unicament has de canviar les frases\n"
-        "Tindràs propina si contestes únicament amb el bloc text resultant d'escollir las frase més adequades per cada periode de temps, ni una paraula més."
-        f"Traducció 1 :{traduccioApertium}\n Traducció 2: {traduccioGPT}"
+        "4. Modifica la traducció per tal que sigui més correcta en català, substituint si cal paraules o frases per sinònims més comuns.\n"
+        "5. Vigila que les marques de temps que hi hagi tinguin un format com aquest: 00:00:11,595 --> 00:00:14,515. Corregeix-les si no compleixen el format.\n"
+        "Recorda mantenir l'estructura de les traduccions en la teva resposta. Només canvia les frases i res més.\n"
+        "Tindras propina si contestes únicament amb el bloc de text resultant, ni una paraula més.\n\n"
+        f"Traducció 1: {traduccioApertium}\nTraducció 2: {traduccioGPT}"
     )
+
     try:
         resposta = client.chat.completions.create(
             model=model,
@@ -233,22 +249,33 @@ def traduir_bloc_gpt4(text_bloc: str, client: OpenAI, model: str = "gpt-4o-mini"
         print("S'ha produït un error en connectar amb l'API d'OpenAI:", e)
         return ""
 
-def traduir_fitxer_subtitols(nom_fitxer_srt: str, model: str = "gpt-4o-mini") -> str:
+###############################################################################
+#    Funció que tradueix tot un fitxer SRT a partir de l'idioma detectat      #
+###############################################################################
+
+def traduir_fitxer_subtitols(nom_fitxer_srt: str, track_lang: str, model: str = "gpt-4o-mini") -> str:
     """
     Llegeix un fitxer .srt, el divideix en blocs de 10 subtítols,
-    tradueix cada bloc i retorna la concatenació final.
+    tradueix cada bloc (Apertium + GPT4) i retorna la concatenació final.
     """
     blocs_subtitols = llegir_subtitols_per_blocs(nom_fitxer_srt, mida_bloc=10)
     client = OpenAI()
     resultat_total = []
 
     for bloc_original in tqdm(blocs_subtitols, desc=f"Traduint blocs ({os.path.basename(nom_fitxer_srt)})"):
-        text_traduitApertium = tradueix_castella_a_catala(bloc_original)
-        text_traduitGPT = traduir_bloc_gpt4(bloc_original, client, model=model)
-        text_corretgit = corretgir_bloc_gpt4(text_traduitApertium, text_traduitGPT, client, model=model)
+        # 1) Traducció bàsica amb Apertium
+        text_traduitApertium = tradueix_a_catala(bloc_original, track_lang)
 
-        # Afegim un salt de línia final per evitar que l'últim subtítol
-        # del bloc quedi enganxat amb el primer del bloc següent.
+        # 2) Traducció bàsica amb GPT-4
+        text_traduitGPT = traduir_bloc_gpt4(bloc_original, client, model=model)
+
+        # 3) Correcció / fusió de les dues traduccions amb GPT-4
+        text_corretgit = corretgir_bloc_gpt4(text_traduitApertium, text_traduitGPT, client, model=model)
+        text_corretgit.replace("'''", "")
+        
+
+        # Afegim un salt de línia final per evitar que l'últim subtítol del bloc
+        # quedi enganxat amb el primer del bloc següent.
         text_corretgit += "\n\n"
         resultat_total.append(text_corretgit)
 
@@ -267,7 +294,6 @@ def adjuntar_subtitols_mkv(mkv_path: str, srt_path: str, idioma: str = "cat") ->
     base_name = os.path.splitext(mkv_path)[0]
     nou_mkv = base_name + "_CAT.mkv"
 
-    # --language 0:cat indica a mkvmerge que la pista té codi d'idioma 'cat'
     command = [
         "mkvmerge",
         "-o", nou_mkv,
@@ -306,9 +332,9 @@ def processar_carpeta_mkv(ruta_carpeta: str, embed_subs: bool = False):
         return
 
     for mkv_path in tqdm(mkv_files, desc="Processant fitxers MKV"):
-        # 1) Determinar quina pista de subtítols cal extreure
-        pista_id = trobar_pista_subtitols(mkv_path)
-        if pista_id < 0:
+        # 1) Determinar quina pista de subtítols cal extreure i l'idioma
+        pista_id, pista_lang = trobar_pista_subtitols(mkv_path)
+        if pista_id < 0 or not pista_lang:
             print(f"No s'ha trobat cap pista de subtítols en castellà ni anglès per {mkv_path}")
             continue
 
@@ -318,8 +344,8 @@ def processar_carpeta_mkv(ruta_carpeta: str, embed_subs: bool = False):
             print(f"No s'ha pogut extreure la pista {pista_id} de {mkv_path}.")
             continue
 
-        # 3) Traduir el fitxer .srt
-        resultat_traduit = traduir_fitxer_subtitols(srt_path, model="gpt-4o-mini")
+        # 3) Traduir el fitxer .srt (tenim en compte l'idioma original detectat)
+        resultat_traduit = traduir_fitxer_subtitols(srt_path, pista_lang, model="gpt-4o-mini")
 
         # 4) Desa el resultat final com a *_cat.srt
         nom_arxiu_sense_ext, _ = os.path.splitext(srt_path)
@@ -347,7 +373,7 @@ def main():
     if env_embed:
         embed_subs = True
 
-    #3) Comprovem arguments
+    # 3) Comprovem arguments
     if len(sys.argv) < 2:
         print("Ús: python traductor_subtitols.py <carpeta_on_hi_ha_els_MKV>")
         print("   (Opcional) estableix EMBED_SUBS=true si vols afegir els subtítols .srt al .mkv.")
