@@ -69,20 +69,20 @@ def trobar_pista_subtitols(mkv_path: str):
     # 1) Castellà
     pistes_castella = [
         p for p in pistes_subtitols
-        if es_valida(p, "es") or es_valida(p, "spa")
+        if es_valida(p, "spa")
     ]
     if pistes_castella:
         # Retornem el primer track ID que hem trobat i l'idioma "es"
-        return pistes_castella[0]["id"], "es"
+        return pistes_castella[0]["id"], "spa"
 
     # 2) Anglès
     pistes_angles = [
         p for p in pistes_subtitols
-        if es_valida(p, "en") or es_valida(p, "eng")
+        if es_valida(p, "eng")
     ]
     if pistes_angles:
         # Retornem el primer track ID que hem trobat i l'idioma "en"
-        return pistes_angles[0]["id"], "en"
+        return pistes_angles[0]["id"], "eng"
 
     return -1, None
 
