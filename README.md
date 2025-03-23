@@ -1,6 +1,10 @@
+Aquí tens el text actualitzat del Readme.md amb les noves funcionalitats i els noms de les variables d'entorn modificades:
+
+---
+
 # Traductor de Subtítols al Català
 
-Aquesta eina permet traduir automàticament els subtítols dels arxius `.mkv` al català mitjançant l'API de ChatGPT. Funciona dins d'un contenidor Docker, assegurant un entorn controlat i fàcil d'executar en qualsevol màquina.
+Aquesta eina permet traduir automàticament els subtítols dels arxius `.mkv` al català mitjançant un model LLM (per exemple, OpenAI o DeepSeek). Funciona dins d'un contenidor Docker, assegurant un entorn controlat i fàcil d'executar en qualsevol màquina.
 
 > **Nota:** Els subtítols del fitxer han d'estar en format **SRT**.
 
@@ -11,8 +15,11 @@ Aquesta eina permet traduir automàticament els subtítols dels arxius `.mkv` al
 Abans de començar, assegura’t de tenir:
 
 1. **Docker** instal·lat al teu ordinador.
-2. **Clau API d'OpenAI**: Necessitaràs una clau d'API vàlida per utilitzar el model `gpt-4o-mini`. Pots obtenir-ne una a [OpenAI](https://platform.openai.com/).
-3. **Fitxers `.mkv` amb subtítols** en format **SRT**.
+2. **Clau API vàlida**: Necessitaràs una clau d'API per utilitzar el model. La clau s'especifica a través de la variable d'entorn **API_KEY**.  
+3. **Model LLM**: Selecciona el model que vols utilitzar (per exemple, `gpt-4o-mini` per OpenAI o `deepseek-chat` per DeepSeek). Aquest valor s'especifica amb la variable d'entorn **MODEL**.
+4. **Fitxers `.mkv` amb subtítols** en format **SRT**.
+
+> **Nota:** La URL de l'endpoint s'estableix automàticament segons el model triat (si el model comença per `deepseek` s'utilitzarà l'endpoint de DeepSeek, sinó es farà servir l'endpoint d'OpenAI).
 
 ---
 
@@ -48,18 +55,30 @@ Assegura’t que tens els teus fitxers `.mkv` en una carpeta local. Per exemple,
 Utilitza el següent comandament per executar el traductor:
 
 ```bash
-docker run --rm -e OPENAI_API_KEY="LA_TEVA_CLAU_API" -v "C:\\Videos:/data" traductor_subtitols /data
+docker run --rm \
+  -e API_KEY="LA_TEVA_CLAU_API" \
+  -e MODEL="gpt-4o-mini" \
+  -v "C:\\Videos:/data" \
+  traductor_subtitols /data
 ```
+
+*Amb aquest comandament es traduiran els subtítols dels fitxers `.mkv` i es desarà un fitxer SRT traduït amb el sufix `_cat.srt` en el mateix directori.*
 
 ### 3. **Opcions avançades: Adjuntar els subtítols traduïts al `.mkv`**
 
 Si vols incrustar automàticament els subtítols traduïts al fitxer `.mkv` original, afegeix la variable d’entorn `EMBED_SUBS=true` al comandament:
 
 ```bash
-docker run --rm -e OPENAI_API_KEY="LA_TEVA_CLAU_API" -e EMBED_SUBS=true -v "C:\\Videos:/data" traductor_subtitols /data
+docker run --rm \
+  -e API_KEY="LA_TEVA_CLAU_API" \
+  -e MODEL="gpt-4o-mini" \
+  -e EMBED_SUBS=true \
+  -v "C:\\Videos:/data" \
+  traductor_subtitols /data
 ```
 
-Amb aquesta opció, es crearà un nou fitxer `.mkv` que inclourà els subtítols en català, amb el mateix nom que l'original però amb el sufix `_CAT`. Exemple:
+Amb aquesta opció, es crearà un nou fitxer `.mkv` que inclourà els subtítols en català, amb el mateix nom que l'original però amb el sufix `_CAT`.  
+Exemple:
 
 ```
 Original: video.mkv
@@ -81,28 +100,14 @@ Pots veure els subtítols traduïts:
 
 ---
 
-## **Exemples**
-
-### Exemple bàsic (sense incrustar subtítols)
-```bash
-docker run --rm -e OPENAI_API_KEY="sk-xxxxxxx" -v "C:\\Users\\Naudor\\Videos:/data" traductor_subtitols /data
-```
-
-### Exemple amb subtítols incrustats al `.mkv`
-```bash
-docker run --rm -e OPENAI_API_KEY="sk-xxxxxxx" -e EMBED_SUBS=true -v "C:\\Users\\Naudor\\Videos:/data" traductor_subtitols /data
-```
-
----
-
 ## **Resolució de problemes**
 
 ### “No s'han trobat fitxers .mkv a la carpeta /data”
 - Comprova que la carpeta especificada conté fitxers `.mkv`.
 - Si la ruta conté espais, assegura’t d’utilitzar cometes dobles.
 
-### “Error: OPENAI_API_KEY no definida”
-- Verifica que has passat la clau API correctament amb `-e OPENAI_API_KEY="LA_TEVA_CLAU_API"`.
+### “Error: API_KEY no definida”
+- Verifica que has passat la clau API correctament amb `-e API_KEY="LA_TEVA_CLAU_API"`.
 
 ### Subtítols no disponibles o incorrectes
 - Assegura’t que els subtítols són en format SRT. Si no ho són, pots convertir-los manualment amb eines com [Subtitle Edit](https://github.com/SubtitleEdit/subtitleedit).
@@ -128,3 +133,6 @@ Aquest projecte està llicenciat sota la llicència MIT. Consulta el fitxer `LIC
 
 Si tens dubtes o suggeriments, pots contactar amb mi mitjançant el repositori de GitHub.
 
+---
+
+Aquest Readme reflecteix les noves funcionalitats i la configuració dinàmica del client API basat en el model triat.
