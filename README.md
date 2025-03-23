@@ -1,6 +1,3 @@
-Aquí tens el text actualitzat del Readme.md amb les noves funcionalitats i els noms de les variables d'entorn modificades:
-
----
 
 # Traductor de Subtítols al Català
 
