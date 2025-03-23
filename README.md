@@ -131,5 +131,3 @@ Aquest projecte està llicenciat sota la llicència MIT. Consulta el fitxer `LIC
 Si tens dubtes o suggeriments, pots contactar amb mi mitjançant el repositori de GitHub.
 
 ---
-
-Aquest Readme reflecteix les noves funcionalitats i la configuració dinàmica del client API basat en el model triat.
