@@ -54,10 +54,14 @@ def trobar_pista_subtitols(mkv_path: str):
             return False
 
         hearing_impaired = props.get("hearing_impaired", False)
+        forced_track = props.get("forced_track", False)
         sdh_indicadors = ["sdh", "hearing", "discapacitat"]
         commentary_indicadors = ["commentary", "director", "comentarios", "comment"]
 
         if hearing_impaired:
+            return False
+        
+        if forced_track:
             return False
 
         track_name_lower = track_name.lower()
@@ -177,6 +181,19 @@ def traduir_bloc(text_bloc: str, client, model: str) -> str:
             "No modifiquis la numeració ni els temps dels subtítols, només el text.\n"
             "No tradueixis noms propis de persones.\n"
             "Contesta únicament amb el text traduït, ni una paraula més."
+            "Tradueix 'Corazón Sombrio' per 'Cor tenebrós', 'garracuerno' per 'Garracorna', 'azotamentes' per 'flagell de ments', 'risa' per 'rialla', 'mentonáculo' per 'mentonacle', "
+            "'a salvo' per 'fora de perill', 'Tarareo' per 'taral·leig', 'escueta' per 'concisa', 'en cuanto' per 'tant bon punt', 'amanezca' per 'surti el sol', 'ojo avizor' per 'ull viu'"
+            "'cambion' per 'metàmorf', 'juguetes' per 'juguines', 'Ojalá' per 'Tant de bo', 'impia' per 'impietosa', 'engendro' per 'abominació', 'ladrones' per 'lladres', 'sedienta' per 'assedegada'"
+            "'siervo' per 'vassall', 'podrida' per 'púdrida', 'labia' per 'eloqüència', 'cabeza hueca' per 'cap de suro', 'mente colmena' per 'ment enllaçada', 'nauseabunda' per 'repugnant'"
+            "'frasco' per 'flascó', 'conseguido' per 'aconseguit', 'diablillo' per 'dimoniet'', 'Jarro' per 'Gerra', 'piel robliza' per 'pell de roure', 'cáliz' per 'càliz', 'compañeros' per 'companys'"
+            "'trampilla' per 'trapa', 'pócima' per 'pòcima', 'jamas pense' per 'mai hauria pensat', 'al acecho' per 'a la guait', 'picaro' per 'brivall', 'salpicadura' per 'esquitx', 'pillan' per 'atrapen'"
+            "'me las piro' per 'foto el camp', 'empujoncito' per 'empenteta', 'bicho' per 'bestiola', 'hacha' per 'destral', 'te diviertes' per 'et diverteixes', 'pandilla' per 'colla', 'pilla' per 'agafa'"
+            "'lenyador' per 'llenyataire','sabe a' per 'te gust a ', 'hinchado' per 'inflat', 'conozco' per 'conec', 'pesadilla' per 'malson', 'acometida' per 'escomesa', 'tañido' per 'repic', 'enano' per 'nan'"
+            "'yelmo' per 'elm', 'rindete' per 'rendeix-te', 'estupendo' per 'fantàstic', 'ahínco' per 'afany', 'pastizal' per 'dineral', 'merecido' per 'merescut', 'manos a la obra' per 'anem per feina'"
+            "'usa' per 'utilitza', 'colinas' per 'turons', 'sendero' per 'camí', 'date prisa' per 'afanya't', 'se cuelan' per 's'escolen', 'macheta' per 'ganivet gros', 'en un santiamen' per 'en un instant'"
+            "'Lunar' per 'de la Lluna', 'pretendes' per 'pretens', 'bicho' per 'bestiola', 'sufres' per 'pateixes', 'Fallo' per 'Fracàs','apestas' per 'fas pudor'"
+            "Si detectes que una paraula com 'cielo' s'utilitza com a mot carinyós, tradueix-la com 'rei' o 'carinyo', segons convingui. Si és literal, fes servir 'cel'."
+            "Quan es parli en el text original de 'saga' com a sinonim de 'bruja' tradueix-lo per 'bruixa'"
         )}
     ]
     try:

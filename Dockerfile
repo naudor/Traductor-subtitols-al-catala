@@ -1,5 +1,5 @@
 # Utilitzem una imatge base amb Python 3.9 slim
-FROM python:3.9-slim
+FROM python:3.9-slim-bookworm
 
 # Actualitzem i instal·lem els paquets bàsics necessaris (mantenim mkvtoolnix per extreure els subtítols)
 RUN apt-get update && apt-get install -y \
