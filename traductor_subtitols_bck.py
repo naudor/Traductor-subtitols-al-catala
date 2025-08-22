@@ -54,14 +54,10 @@ def trobar_pista_subtitols(mkv_path: str):
             return False
 
         hearing_impaired = props.get("hearing_impaired", False)
-        forced_track = props.get("forced_track", False)
         sdh_indicadors = ["sdh", "hearing", "discapacitat"]
         commentary_indicadors = ["commentary", "director", "comentarios", "comment"]
 
         if hearing_impaired:
-            return False
-        
-        if forced_track:
             return False
 
         track_name_lower = track_name.lower()
@@ -77,7 +73,7 @@ def trobar_pista_subtitols(mkv_path: str):
         if es_valida(p, "spa")
     ]
     if pistes_castella:
-        # Retornem el primer track ID que hem trobat i l'idioma "spa"
+        # Retornem el primer track ID que hem trobat i l'idioma "es"
         return pistes_castella[0]["id"], "spa"
 
     # 2) Anglès
@@ -86,10 +82,45 @@ def trobar_pista_subtitols(mkv_path: str):
         if es_valida(p, "eng")
     ]
     if pistes_angles:
-        # Retornem el primer track ID que hem trobat i l'idioma "eng"
+        # Retornem el primer track ID que hem trobat i l'idioma "en"
         return pistes_angles[0]["id"], "eng"
 
     return -1, None
+
+###############################################################################
+#       Funció de traducció local amb Apertium (spa-cat o eng-cat)            #
+###############################################################################
+
+def tradueix_a_catala(frase, track_lang: str):
+    """
+    Tradueix una frase al català utilitzant Apertium dins el contenidor.
+    Triem la parella de traducció en funció de l'idioma detectat:
+      - spa-cat si la pista és en castellà
+      - eng-cat si la pista és en anglès
+    """
+    # Determinem la pipeline d'Apertium
+    if track_lang == "es":
+        pipeline = "spa-cat"
+    elif track_lang == "en":
+        pipeline = "eng-cat"
+    else:
+        # Si no coincideix, assumim castellà per defecte
+        pipeline = "spa-cat"
+
+    command = f'echo "{frase}" | apertium {pipeline}'
+
+    try:
+        result = subprocess.run(
+            command,
+            shell=True,            # Permet a echo | apertium
+            capture_output=True,
+            text=True
+        )
+        text_traduccio = result.stdout.strip()
+        return text_traduccio if text_traduccio else None
+    except Exception as e:
+        print(f"S'ha produït un error en traduir la frase: {e}")
+        return None
 
 ###############################################################################
 #                         Funcions d'extracció i de divisió                   #
@@ -158,87 +189,123 @@ def llegir_subtitols_per_blocs(nom_fitxer: str, mida_bloc=10):
     return blocs
 
 ###############################################################################
-#   Funció unificada de traducció amb API (GPT4/DeepSeek via LangChain)       #
+#                          Funcions de traducció GPT4                         #
 ###############################################################################
 
-def traduir_bloc(text_bloc: str, client, model: str) -> str:
+def corretgir_bloc_gpt4(traduccioApertium: str, traduccioGPT: str, client: OpenAI, model: str = "gpt-4o-mini") -> str:
     """
-    Envia un bloc de subtítols al model indicat per obtenir la traducció al català.
-    Utilitza el client proporcionat i el model especificat.
+    Envia un bloc de subtítols al model GPT-4o-mini per obtenir la traducció al català.
+    Retorna el text traduït.
+    """
+    prompt = (
+        "Et pasaré dos textos, que són la traducció d'un fragment dels subtítols d'un capítol d'una sèrie de TV al català.\n"
+        "1. Compara cada una de les frases de les dues traduccions.\n"
+        "2. Per cada frase, escull la més correcta en català i, si són igual de correctes, la que s'adeqüi millor al context. En cas que siguin exactament iguals, escull la del primer text.\n"
+        "3. Elimina els '*' davant de les paraules.\n"
+        "4. Modifica la traducció per tal que sigui més correcta en català, substituint si cal paraules o frases per sinònims més comuns.\n"
+        "5. Vigila que les marques de temps que hi hagi tinguin un format com aquest: 00:00:11,595 --> 00:00:14,515. Corregeix-les si no compleixen el format.\n"
+        "Recorda mantenir l'estructura de les traduccions en la teva resposta. Només canvia les frases i res més.\n"
+        "Tindras propina si contestes únicament amb el bloc de text resultant, ni una paraula més.\n\n"
+        f"Traducció 1: {traduccioApertium}\nTraducció 2: {traduccioGPT}"
+    )
+
+    try:
+        resposta = client.chat.completions.create(
+            model=model,
+            messages=[
+                {"role": "system", "content": "Ets un traductor al català expert de subtítols."},
+                {"role": "user", "content": prompt}
+            ],
+            temperature=0.3
+        )
+        text_traduit = resposta.choices[0].message.content
+        return text_traduit
+    except Exception as e:
+        print("S'ha produït un error en connectar amb l'API d'OpenAI:", e)
+        return ""
     
-    El prompt és:
-      "Tradueix el següent text a català:
-      {text_bloc}
-      
-      No modifiquis la numeració ni els temps dels subtítols, només el text.
-      No tradueixis noms propis de persones.
-      Contesta únicament amb el text traduït, ni una paraula més."
+def traduir_bloc_gpt4(text_bloc: str, client: OpenAI, model: str = "gpt-4o-mini") -> str:
     """
-    messages = [
+    Envia un bloc de subtítols al model GPT-4o-mini per obtenir la traducció al català.
+    Retorna el text traduït.
+    """
+    prompt = (
+        f"Tradueix el següent text a català:\n{text_bloc}\n\n"
+        "No modifiquis la numeració ni els temps dels subtítols, només el text.\n"
+        "No tradueixis noms propis de persones.\n"
+        "Contesta únicament amb el text traduït, ni una paraula més."
+    )
+    try:
+        resposta = client.chat.completions.create(
+            model=model,
+            messages=[
+                {"role": "system", "content": "Ets un traductor al català expert en subtítols."},
+                {"role": "user", "content": prompt}
+            ],
+            temperature=0.3
+        )
+        text_traduit = resposta.choices[0].message.content
+        return text_traduit
+    except Exception as e:
+        print("S'ha produït un error en connectar amb l'API d'OpenAI:", e)
+        return ""
+    
+def traduir_bloc_deepseek(text_bloc: str, client, model: str = "deepseek-chat") -> str:
+    """
+    Envia un bloc de subtítols al model de DeepSeek per obtenir la traducció al català.
+    Retorna el text traduït.
+    """
+    prompt = [
         {"role": "system", "content": "Ets un traductor al català expert en subtítols."},
         {"role": "user", "content": (
             f"Tradueix el següent text a català:\n{text_bloc}\n\n"
             "No modifiquis la numeració ni els temps dels subtítols, només el text.\n"
             "No tradueixis noms propis de persones.\n"
             "Contesta únicament amb el text traduït, ni una paraula més."
-            "Tradueix 'Corazón Sombrio' per 'Cor tenebrós', 'garracuerno' per 'Garracorna', 'azotamentes' per 'flagell de ments', 'risa' per 'rialla', 'mentonáculo' per 'mentonacle', "
-            "'a salvo' per 'fora de perill', 'Tarareo' per 'taral·leig', 'escueta' per 'concisa', 'en cuanto' per 'tant bon punt', 'amanezca' per 'surti el sol', 'ojo avizor' per 'ull viu',"
-            "'cambion' per 'metàmorf', 'juguetes' per 'juguines', 'Ojalá' per 'Tant de bo', 'impia' per 'impietosa', 'engendro' per 'abominació', 'ladrones' per 'lladres', 'sedienta' per 'assedegada',"
-            "'siervo' per 'vassall', 'podrida' per 'púdrida', 'labia' per 'eloqüència', 'cabeza hueca' per 'cap de suro', 'mente colmena' per 'ment enllaçada', 'nauseabunda' per 'repugnant',"
-            "'frasco' per 'flascó', 'conseguido' per 'aconseguit', 'diablillo' per 'dimoniet'', 'Jarro' per 'Gerra', 'piel robliza' per 'pell de roure', 'cáliz' per 'càliz', 'compañeros' per 'companys',"
-            "'trampilla' per 'trapa', 'pócima' per 'pòcima', 'jamas pense' per 'mai hauria pensat', 'al acecho' per 'a la guait', 'picaro' per 'brivall', 'salpicadura' per 'esquitx', 'pillan' per 'atrapen',"
-            "'me las piro' per 'foto el camp', 'empujoncito' per 'empenteta', 'bicho' per 'bestiola', 'hacha' per 'destral', 'te diviertes' per 'et diverteixes', 'pandilla' per 'colla', 'pilla' per 'agafa',"
-            "'lenyador' per 'llenyataire','sabe a' per 'te gust a', 'hinchado' per 'inflat', 'conozco' per 'conec', 'pesadilla' per 'malson', 'acometida' per 'escomesa', 'tañido' per 'repic', 'enano' per 'nan',"
-            "'yelmo' per 'elm', 'rindete' per 'rendeix-te', 'estupendo' per 'fantàstic', 'ahínco' per 'afany', 'pastizal' per 'dineral', 'merecido' per 'merescut', 'manos a la obra' per 'anem per feina',"
-            "'usa' per 'utilitza', 'colinas' per 'turons', 'sendero' per 'camí', 'date prisa' per 'afanya't', 'se cuelan' per 's'escolen', 'macheta' per 'ganivet gros', 'en un santiamen' per 'en un instant',"
-            "'Lunar' per 'de la Lluna', 'pretendes' per 'pretens', 'bicho' per 'bestiola', 'sufres' per 'pateixes', 'Fallo' per 'Fracàs','apestas' per 'fas pudor', 'puño' per 'puny', 'juguetes' per 'joguines',"
-            "'fogata' per 'foguera', 'renacuajo' per 'capgròs', 'comprendo' per 'entenc', 'fugaz' per 'fugaç', 'archiduque' per 'arxiduc', 'periodico' per 'diari', 'cloacas' per 'clavegueres',"
-            "'enseñame' per \"ensenya'm\""
-            "Si detectes que una paraula com 'cielo' s'utilitza com a mot carinyós, tradueix-la com 'rei' o 'carinyo', segons convingui. Si és literal, fes servir 'cel'."
-            "Quan es parli en el text original de 'saga' com a sinonim de 'bruja' tradueix-lo per 'bruixa'"
         )}
     ]
     try:
         resposta = client.chat.completions.create(
             model=model,
-            messages=messages,
+            messages=prompt,
             temperature=0.3
         )
         text_traduit = resposta.choices[0].message.content
         return text_traduit
     except Exception as e:
-        print(f"S'ha produït un error en connectar amb l'API amb el model {model}: {e}")
+        print("S'ha produït un error en connectar amb l'API de DeepSeek:", e)
         return ""
+
 
 ###############################################################################
 #    Funció que tradueix tot un fitxer SRT a partir de l'idioma detectat      #
 ###############################################################################
 
-def traduir_fitxer_subtitols(nom_fitxer_srt: str, track_lang: str, model: str) -> str:
+def traduir_fitxer_subtitols(nom_fitxer_srt: str, track_lang: str, model: str = "gpt-4o-mini") -> str:
     """
     Llegeix un fitxer .srt, el divideix en blocs de 10 subtítols,
-    tradueix cada bloc i retorna la concatenació final.
-    S'obtindran la clau d'API i es configurarà la URL en funció del model triat.
+    tradueix cada bloc (Apertium + GPT4) i retorna la concatenació final.
     """
-    # Obtenim la clau d'API
-    api_key = os.getenv("API_KEY")
-    if not api_key:
-        print("Error: No s'ha trobat la clau d'API a la variable d'entorn API_KEY.")
-        sys.exit(1)
-
-    if model.lower().startswith("deepseek"):
-        base_url = os.getenv("DEEPSEEK_BASE_URL", "https://api.deepseek.com")
-    else:
-        base_url = os.getenv("BASE_URL", "https://api.openai.com/v1")
-
-    client = OpenAI(api_key=api_key, base_url=base_url)
-
     blocs_subtitols = llegir_subtitols_per_blocs(nom_fitxer_srt, mida_bloc=10)
+    #client = OpenAI()
+    client = OpenAI(api_key="sk-d4638f1a452440749531d8460df308bf", base_url="https://api.deepseek.com")
     resultat_total = []
 
     for bloc_original in tqdm(blocs_subtitols, desc=f"Traduint blocs ({os.path.basename(nom_fitxer_srt)})"):
-        text_traduit = traduir_bloc(bloc_original, client, model)
-        text_traduit = text_traduit.replace("'''", "")
+        # 1) Traducció bàsica amb Apertium
+        #text_traduitApertium = tradueix_a_catala(bloc_original, track_lang)
+
+        # 2) Traducció bàsica amb GPT-4
+        #text_traduit = traduir_bloc_gpt4(bloc_original, client, model=model)
+        text_traduit = traduir_bloc_deepseek(bloc_original, client)
+
+        # 3) Correcció / fusió de les dues traduccions amb GPT-4
+        #text_corretgit = corretgir_bloc_gpt4(text_traduitApertium, text_traduitGPT, client, model=model)
+        text_traduit.replace("'''", "")
+        
+
+        # Afegim un salt de línia final per evitar que l'últim subtítol del bloc
+        # quedi enganxat amb el primer del bloc següent.
         text_traduit += "\n\n"
         resultat_total.append(text_traduit)
 
@@ -283,16 +350,10 @@ def processar_carpeta_mkv(ruta_carpeta: str, embed_subs: bool = False):
     - Automàticament detecta la pista de subtítols en castellà (no SDH/commentary),
       si no n'hi ha, anglès (no SDH/commentary).
     - Extreu la pista en .srt.
-    - Traduix en blocs de 10 i desa la traducció a *_cat.srt.
+    - Tradueix en blocs de 10 i desa la traducció a *_cat.srt.
     - Si embed_subs=True, crida mkvmerge per incrustar els subtítols traduïts
       en un nou fitxer MKV (amb '_CAT' al final del nom).
     """
-    # Obtenim el model a usar des de la variable d'entorn
-    model = os.getenv("MODEL")
-    if not model:
-        print("Error: No s'ha trobat el model a la variable d'entorn MODEL.")
-        sys.exit(1)
-
     patrons = os.path.join(ruta_carpeta, "*.mkv")
     mkv_files = glob.glob(patrons)
 
@@ -314,7 +375,7 @@ def processar_carpeta_mkv(ruta_carpeta: str, embed_subs: bool = False):
             continue
 
         # 3) Traduir el fitxer .srt (tenim en compte l'idioma original detectat)
-        resultat_traduit = traduir_fitxer_subtitols(srt_path, pista_lang, model)
+        resultat_traduit = traduir_fitxer_subtitols(srt_path, pista_lang, model="gpt-4o-mini")
 
         # 4) Desa el resultat final com a *_cat.srt
         nom_arxiu_sense_ext, _ = os.path.splitext(srt_path)
@@ -329,27 +390,30 @@ def processar_carpeta_mkv(ruta_carpeta: str, embed_subs: bool = False):
             adjuntar_subtitols_mkv(mkv_path, fitxer_sortida)
 
 def main():
-    # Comprovem que hi hagi clau d'API i model a les variables d'entorn
-    if not os.getenv("API_KEY"):
-        print("Error: No s'ha trobat la clau d'API a la variable d'entorn API_KEY.")
-        sys.exit(1)
-    if not os.getenv("MODEL"):
-        print("Error: No s'ha trobat el model a la variable d'entorn MODEL.")
+    # 1) Comprovem que hi hagi clau d'API al sistema
+    #api_key = os.getenv("OPENAI_API_KEY")
+    api_key = "sk-d4638f1a452440749531d8460df308bf"
+
+    if not api_key:
+        print("Error: No s'ha trobat la clau d'API a la variable d'entorn OPENAI_API_KEY.")
         sys.exit(1)
 
-    # Llegim si hi ha variable d'entorn EMBED_SUBS
-    embed_subs = False
+    # 2) Llegim si hi ha variable d'entorn EMBED_SUBS
+    # Qualsevol valor no buit (true, yes, 1...) l'interpretarem com a True
+    #embed_subs = False
+    embed_subs = True
     env_embed = os.getenv("EMBED_SUBS", "").strip().lower()
     if env_embed:
         embed_subs = True
 
-    # Comprovem arguments
-    if len(sys.argv) < 2:
-        print("Ús: python traductor_subtitols.py <carpeta_on_hi_ha_els_MKV>")
-        print("   (Opcional) estableix EMBED_SUBS=true si vols afegir els subtítols .srt al .mkv.")
-        sys.exit(1)
+    # 3) Comprovem arguments
+    # if len(sys.argv) < 2:
+    #     print("Ús: python traductor_subtitols.py <carpeta_on_hi_ha_els_MKV>")
+    #     print("   (Opcional) estableix EMBED_SUBS=true si vols afegir els subtítols .srt al .mkv.")
+    #     sys.exit(1)
 
-    carpeta = sys.argv[1]
+    #carpeta = sys.argv[1]
+    carpeta = "D:\MUSICA\Silo"
     if not os.path.isdir(carpeta):
         print(f"Error: {carpeta} no és una carpeta vàlida.")
         sys.exit(1)
